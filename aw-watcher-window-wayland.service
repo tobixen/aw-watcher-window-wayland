@@ -37,10 +37,10 @@ Type=simple
 ExecStart=aw-watcher-window-wayland
 Restart=on-failure
 RestartSec=10
-# Ensure aw-server is actually listening before starting
-ExecStartPre=/bin/sh -c 'until nc -z localhost 5600; do sleep 1; done'
+# Ensure aw-server is actually listening before starting (timeout after 60 seconds)
+ExecStartPre=/bin/sh -c 'i=0; until nc -z localhost 5600 || [ $i -eq 60 ]; do sleep 1; i=$((i+1)); done; nc -z localhost 5600'
 # Wayland watchers need access to Wayland display
-Environment="WAYLAND_DISPLAY=%E/wayland-0"
+Environment="WAYLAND_DISPLAY=%t/wayland-0"
 
 [Install]
 WantedBy=default.target
