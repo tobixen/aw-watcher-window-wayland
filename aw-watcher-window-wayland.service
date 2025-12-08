@@ -14,9 +14,11 @@
 # Installation:
 # 1. Build and install with: make install
 #    This installs both the binary and service file to ~/.local/
-# 2. Reload systemd: systemctl --user daemon-reload
-# 3. Enable the service: systemctl --user enable aw-watcher-window-wayland.service
-# 4. Start the service: systemctl --user start aw-watcher-window-wayland.service
+# 2. Import Wayland environment: systemctl --user import-environment WAYLAND_DISPLAY
+#    (Add this to your session startup script, e.g., ~/.config/sway/config or ~/.xinitrc)
+# 3. Reload systemd: systemctl --user daemon-reload
+# 4. Enable the service: systemctl --user enable aw-watcher-window-wayland.service
+# 5. Start the service: systemctl --user start aw-watcher-window-wayland.service
 #
 # For system-wide installation (not recommended for user services):
 #    sudo make install
@@ -31,6 +33,8 @@ After=aw-server.service
 Requires=aw-server.service
 # Wait for aw-server to be fully ready and listening on port 5600
 After=network.target
+# Ensure we run within a graphical session that has Wayland environment
+After=graphical-session.target
 
 [Service]
 Type=simple
@@ -39,8 +43,9 @@ Restart=on-failure
 RestartSec=10
 # Ensure aw-server is actually listening before starting (timeout after 60 seconds)
 ExecStartPre=/bin/sh -c 'i=0; until nc -z localhost 5600 || [ $i -eq 60 ]; do sleep 1; i=$((i+1)); done; nc -z localhost 5600'
-# Wayland watchers need access to Wayland display
-Environment="WAYLAND_DISPLAY=%t/wayland-0"
+# Note: WAYLAND_DISPLAY must be imported from your graphical session
+# Run: systemctl --user import-environment WAYLAND_DISPLAY
+# Add this command to your compositor/session startup script
 
 [Install]
 WantedBy=default.target
