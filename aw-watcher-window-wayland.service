@@ -1,0 +1,46 @@
+########################################
+# aw-watcher-window-wayland.service   #
+########################################
+#
+# This service file provides an alternative way to run ActivityWatch watchers
+# without using aw-qt. The recommended approach is to use aw-qt, which manages
+# both the server and watchers automatically.
+#
+# Prerequisites:
+# - aw-server-rust must be installed and running
+# - This watcher must be built and installed
+# - Running a Wayland compositor that supports required protocols
+#
+# Installation:
+# 1. Build and install with: make install
+#    This installs both the binary and service file to ~/.local/
+# 2. Reload systemd: systemctl --user daemon-reload
+# 3. Enable the service: systemctl --user enable aw-watcher-window-wayland.service
+# 4. Start the service: systemctl --user start aw-watcher-window-wayland.service
+#
+# For system-wide installation (not recommended for user services):
+#    sudo make install
+#
+# The watcher will automatically start when aw-server is ready and listening on port 5600.
+#
+
+[Unit]
+Description=ActivityWatch Window Watcher for Wayland
+Documentation=https://github.com/ActivityWatch/aw-watcher-window-wayland
+After=aw-server.service
+Requires=aw-server.service
+# Wait for aw-server to be fully ready and listening on port 5600
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=aw-watcher-window-wayland
+Restart=on-failure
+RestartSec=10
+# Ensure aw-server is actually listening before starting
+ExecStartPre=/bin/sh -c 'until nc -z localhost 5600; do sleep 1; done'
+# Wayland watchers need access to Wayland display
+Environment="WAYLAND_DISPLAY=%E/wayland-0"
+
+[Install]
+WantedBy=default.target
