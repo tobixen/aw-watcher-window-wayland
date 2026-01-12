@@ -1,4 +1,14 @@
-.PHONY: all build install clean
+.PHONY: all build install clean enable-service disable-service setup-wayland help
+
+help:
+	@echo "Available targets:"
+	@echo "  all             - Build the project (default)"
+	@echo "  build           - Build the project with cargo"
+	@echo "  install         - Install binary and systemd service"
+	@echo "  clean           - Remove build artifacts"
+	@echo "  enable-service  - Enable and start the systemd service"
+	@echo "  disable-service - Disable and stop the systemd service"
+	@echo "  setup-wayland   - Configure Wayland environment import"
 
 # Determine PREFIX based on whether we're using sudo or not
 DESTDIR :=
@@ -39,3 +49,70 @@ endif
 
 clean:
 	cargo clean
+
+enable-service:
+	@echo "Enabling and starting service..."
+ifeq ($(SUDO_USER),)
+	systemctl --user enable aw-watcher-window-wayland
+	systemctl --user start aw-watcher-window-wayland
+	@echo "Service status:"
+	@systemctl --user status aw-watcher-window-wayland --no-pager
+else
+	@echo "Note: For user service, run without sudo"
+	systemctl --user enable aw-watcher-window-wayland
+	systemctl --user start aw-watcher-window-wayland
+endif
+
+disable-service:
+	@echo "Disabling and stopping service..."
+	systemctl --user stop aw-watcher-window-wayland
+	systemctl --user disable aw-watcher-window-wayland
+	@echo "Service disabled."
+
+setup-wayland: enable-service
+	@echo "Configuring Wayland environment import..."
+	@echo ""
+	@echo "Detecting compositor configuration files..."
+	@if [ -f ~/.config/sway/config ]; then \
+		echo "Found Sway config at ~/.config/sway/config"; \
+		if grep -q "systemctl --user import-environment WAYLAND_DISPLAY" ~/.config/sway/config; then \
+			echo "✓ Environment import already configured"; \
+		else \
+			echo "" >> ~/.config/sway/config; \
+			echo "# Import WAYLAND_DISPLAY for systemd services" >> ~/.config/sway/config; \
+			echo "exec systemctl --user import-environment WAYLAND_DISPLAY" >> ~/.config/sway/config; \
+			echo "✓ Added environment import to Sway config"; \
+			echo "  Please reload Sway config or log out and back in"; \
+		fi; \
+	elif [ -f ~/.config/hypr/hyprland.conf ]; then \
+		echo "Found Hyprland config at ~/.config/hypr/hyprland.conf"; \
+		if grep -q "systemctl --user import-environment WAYLAND_DISPLAY" ~/.config/hypr/hyprland.conf; then \
+			echo "✓ Environment import already configured"; \
+		else \
+			echo "" >> ~/.config/hypr/hyprland.conf; \
+			echo "# Import WAYLAND_DISPLAY for systemd services" >> ~/.config/hypr/hyprland.conf; \
+			echo "exec-once = systemctl --user import-environment WAYLAND_DISPLAY" >> ~/.config/hypr/hyprland.conf; \
+			echo "✓ Added environment import to Hyprland config"; \
+			echo "  Please reload Hyprland config or log out and back in"; \
+		fi; \
+	else \
+		echo "Could not detect compositor config file."; \
+		echo ""; \
+		echo "Please manually add this line to your compositor startup:"; \
+		echo "  exec systemctl --user import-environment WAYLAND_DISPLAY"; \
+		echo ""; \
+		echo "Common locations:"; \
+		echo "  - Sway: ~/.config/sway/config"; \
+		echo "  - Hyprland: ~/.config/hypr/hyprland.conf"; \
+		echo "  - Others: check your compositor documentation"; \
+	fi
+	@echo ""
+	@echo "Restarting service to pick up environment changes..."
+	@systemctl --user restart aw-watcher-window-wayland 2>/dev/null || echo "Note: Service restart will happen after compositor reload"
+	@echo ""
+	@echo "⚠ IMPORTANT: The environment variable will only be available after:"
+	@echo "  1. Reloading your compositor config, OR"
+	@echo "  2. Logging out and back in"
+	@echo ""
+	@echo "After that, verify the service is working:"
+	@echo "  systemctl --user status aw-watcher-window-wayland"
