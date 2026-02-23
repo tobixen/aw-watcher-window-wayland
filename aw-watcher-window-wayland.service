@@ -39,7 +39,7 @@ After=graphical-session.target
 [Service]
 Type=simple
 ExecStart=aw-watcher-window-wayland
-Restart=on-failure
+Restart=always
 RestartSec=10
 # Ensure aw-server is actually listening before starting (timeout after 60 seconds)
 ExecStartPre=/bin/sh -c 'i=0; until nc -z localhost 5600 || [ $i -eq 60 ]; do sleep 1; i=$((i+1)); done; nc -z localhost 5600'
