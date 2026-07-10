@@ -1,9 +1,10 @@
-.PHONY: all build install clean enable-service disable-service setup-wayland help
+.PHONY: all build test install clean enable-service disable-service setup-wayland help
 
 help:
 	@echo "Available targets:"
 	@echo "  all             - Build the project (default)"
 	@echo "  build           - Build the project with cargo"
+	@echo "  test            - Run integration tests (requires sway and aw-server)"
 	@echo "  install         - Install binary and systemd service"
 	@echo "  clean           - Remove build artifacts"
 	@echo "  enable-service  - Enable and start the systemd service"
@@ -31,6 +32,9 @@ all: build
 
 build:
 	cargo build $(CARGO_FLAGS)
+
+test:
+	./tests/compositor_crash_test.sh
 
 install: build
 	# Install aw-watcher-window-wayland executable
