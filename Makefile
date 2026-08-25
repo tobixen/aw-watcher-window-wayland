@@ -33,8 +33,12 @@ all: build
 build:
 	cargo build $(CARGO_FLAGS)
 
+# A test exits 77 when its prerequisites are missing (sway, aw-server,
+# python3). make aborts a recipe on any non-zero status, so map that to
+# success -- otherwise one skipped test stops the rest from running.
 test:
-	./tests/compositor_crash_test.sh
+	./tests/wait_for_wayland_test.sh || [ $$? -eq 77 ]
+	./tests/compositor_crash_test.sh || [ $$? -eq 77 ]
 
 install: build
 	# Install aw-watcher-window-wayland executable
@@ -54,17 +58,22 @@ endif
 clean:
 	cargo clean
 
+# --no-block on start/restart: the unit waits for aw-server and for a Wayland
+# compositor, so a plain start blocks until both exist. That matters most for
+# setup-wayland below, which depends on this target and exists to write the
+# import-environment line the service is waiting for. Expect the status output
+# to read "activating (start-pre)" when run before the compositor is up.
 enable-service:
 	@echo "Enabling and starting service..."
 ifeq ($(SUDO_USER),)
 	systemctl --user enable aw-watcher-window-wayland
-	systemctl --user start aw-watcher-window-wayland
+	systemctl --user start --no-block aw-watcher-window-wayland
 	@echo "Service status:"
 	@systemctl --user status aw-watcher-window-wayland --no-pager
 else
 	@echo "Note: For user service, run without sudo"
 	systemctl --user enable aw-watcher-window-wayland
-	systemctl --user start aw-watcher-window-wayland
+	systemctl --user start --no-block aw-watcher-window-wayland
 endif
 
 disable-service:
@@ -112,7 +121,7 @@ setup-wayland: enable-service
 	fi
 	@echo ""
 	@echo "Restarting service to pick up environment changes..."
-	@systemctl --user restart aw-watcher-window-wayland 2>/dev/null || echo "Note: Service restart will happen after compositor reload"
+	@systemctl --user restart --no-block aw-watcher-window-wayland 2>/dev/null || echo "Note: Service restart will happen after compositor reload"
 	@echo ""
 	@echo "⚠ IMPORTANT: The environment variable will only be available after:"
 	@echo "  1. Reloading your compositor config, OR"
