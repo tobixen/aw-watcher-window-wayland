@@ -13,12 +13,21 @@ help:
 	@echo "  disable-service - Disable and stop the systemd service"
 	@echo "  setup-wayland   - Configure Wayland environment import"
 
-# Determine PREFIX based on whether we're using sudo or not
-DESTDIR :=
-ifeq ($(SUDO_USER),)
-    PREFIX := $(HOME)/.local
+# A system install (sudo, root, or staging into DESTDIR for a package) puts the
+# binary in $(PREFIX)/bin and the user unit in $(PREFIX)/lib/systemd/user, and
+# leaves building and systemd to the user. Anything else is a per-user install
+# into ~/.local and ~/.config/systemd/user. PREFIX is the installation root:
+# the binary goes to $(PREFIX)/bin.
+DESTDIR ?=
+ifneq ($(SUDO_USER)$(DESTDIR),)
+    SYSTEM_INSTALL := yes
+else ifeq ($(shell id -u),0)
+    SYSTEM_INSTALL := yes
+endif
+ifeq ($(SYSTEM_INSTALL),yes)
+    PREFIX ?= /usr/local
 else
-    PREFIX := /usr/local
+    PREFIX ?= $(HOME)/.local
 endif
 
 # Build in release mode by default, unless RELEASE=false
@@ -52,9 +61,9 @@ BINARY := target/$(TARGET_DIR)/aw-watcher-window-wayland
 INSTALL_UNIT = sed 's|^ExecStart=.*|ExecStart=$(PREFIX)/bin/aw-watcher-window-wayland|' aw-watcher-window-wayland.service > $(1).tmp && \
 	install -m 644 $(1).tmp $(1) && rm $(1).tmp
 
-# Under sudo, install only what the user built: building here would run cargo
-# as root and leave root-owned files in target/.
-ifeq ($(SUDO_USER),)
+# A system install only installs what was built: under sudo, building here
+# would run cargo as root and leave root-owned files in target/.
+ifneq ($(SYSTEM_INSTALL),yes)
 install: build
 else
 install:
@@ -64,7 +73,7 @@ endif
 	mkdir -p $(DESTDIR)$(PREFIX)/bin/
 	install -m 755 $(BINARY) $(DESTDIR)$(PREFIX)/bin/aw-watcher-window-wayland
 	# Install systemd user service
-ifeq ($(SUDO_USER),)
+ifneq ($(SYSTEM_INSTALL),yes)
 	mkdir -p $(HOME)/.config/systemd/user
 	$(call INSTALL_UNIT,$(HOME)/.config/systemd/user/aw-watcher-window-wayland.service)
 	systemctl --user daemon-reload || true
@@ -88,13 +97,14 @@ endif
 # compositor, so a plain start blocks until both exist. That matters most for
 # setup-wayland below, which depends on this target and exists to write the
 # import-environment line the service is waiting for. Expect the status output
-# to read "activating (start-pre)" when run before the compositor is up.
+# to read "activating (start-pre)" when run before the compositor is up, and
+# systemctl status to exit 3 then, which must not stop setup-wayland.
 enable-service: not-sudo
 	@echo "Enabling and starting service..."
 	systemctl --user enable aw-watcher-window-wayland
 	systemctl --user start --no-block aw-watcher-window-wayland
 	@echo "Service status:"
-	@systemctl --user status aw-watcher-window-wayland --no-pager
+	@systemctl --user status aw-watcher-window-wayland --no-pager || true
 
 disable-service: not-sudo
 	@echo "Disabling and stopping service..."
@@ -102,13 +112,15 @@ disable-service: not-sudo
 	systemctl --user disable aw-watcher-window-wayland
 	@echo "Service disabled."
 
+# Only an uncommented exec line counts as configured: a commented-out one
+# never runs, and the service would wait for WAYLAND_DISPLAY forever.
 setup-wayland: enable-service
 	@echo "Configuring Wayland environment import..."
 	@echo ""
 	@echo "Detecting compositor configuration files..."
 	@if [ -f ~/.config/sway/config ]; then \
 		echo "Found Sway config at ~/.config/sway/config"; \
-		if grep -q "systemctl --user import-environment WAYLAND_DISPLAY" ~/.config/sway/config; then \
+		if grep -Eq '^[[:space:]]*exec(_always)?[[:space:]]+systemctl --user import-environment[^#]*WAYLAND_DISPLAY' ~/.config/sway/config; then \
 			echo "✓ Environment import already configured"; \
 		else \
 			echo "" >> ~/.config/sway/config; \
@@ -119,7 +131,7 @@ setup-wayland: enable-service
 		fi; \
 	elif [ -f ~/.config/hypr/hyprland.conf ]; then \
 		echo "Found Hyprland config at ~/.config/hypr/hyprland.conf"; \
-		if grep -q "systemctl --user import-environment WAYLAND_DISPLAY" ~/.config/hypr/hyprland.conf; then \
+		if grep -Eq '^[[:space:]]*exec(-once)?[[:space:]]*=[[:space:]]*systemctl --user import-environment[^#]*WAYLAND_DISPLAY' ~/.config/hypr/hyprland.conf; then \
 			echo "✓ Environment import already configured"; \
 		else \
 			echo "" >> ~/.config/hypr/hyprland.conf; \
